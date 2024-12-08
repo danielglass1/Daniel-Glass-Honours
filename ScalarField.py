@@ -5,14 +5,14 @@ import scipy.special as sp
 
 r_range=1e-5
 resolution=0.01
-besselrange=10
-num_frames = 20
-animation_speed=75 #lower is faster
+bessel_n=50
+num_frames = 8
+animation_speed=50 #lower is faster
 
 f=4e14
 n_r=1
 c=2.998e8
-theta_k = 0 #angle of wave
+theta_k = np.pi*0.5 #angle of wave
 
 v=c/n_r
 omega=(2*np.pi*f)
@@ -20,23 +20,26 @@ k=omega/v
 T=1/f
 
 t_range=np.linspace(0, T-(T/num_frames), num_frames)
-n_bessel = np.arange(-besselrange, besselrange+1) #-10 to 10
 r = np.arange(r_range*1e-2, r_range, resolution*r_range)
 theta = np.arange(0, 2*np.pi, resolution)
 r_grid, theta_grid = np.meshgrid(r, theta)
 
-# add up bessel and hankels
+#Z=np.exp(1j*(n_r*k*r_grid*np.cos(theta_grid-theta_k)-omega*t))
+
+# add up bessels
 def compute_field(t):
     Z = np.zeros((len(theta), len(r)), complex)
-    for n in n_bessel:
-        Z += (1j**(n))*np.exp(1j*n*(theta_grid-theta_k))*(sp.jv(n, n_r*k*r_grid-omega*t)+1j*sp.hankel1(n, n_r*k*r_grid-omega*t))
-    return np.imag(Z)
+    Z += sp.jv(0,n_r*k*r)
+    for n in range(1,bessel_n+1):
+        Z += 2*(1j**(n))*sp.jv(n, n_r*k*r_grid)*np.cos(n*(theta_grid-theta_k))
+    Z *= np.exp(-1j*omega*t)
+    return np.real(Z)
 
 # compute frames for a range of t values
 frames = [compute_field(i) for i in t_range]
 
 fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
-c=ax.pcolormesh(theta_grid, r_grid, frames[0], cmap='gist_heat', shading='auto',norm="log")
+c=ax.pcolormesh(theta_grid, r_grid, frames[0], cmap='gist_heat', shading='auto')
 fig.colorbar(c, ax=ax, label='Scalar Value')
 
 ax.set_rmax(r_range)
