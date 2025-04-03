@@ -1,83 +1,201 @@
+import jax
+import jax.numpy as jnp
+import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-import numpy as np
-import scipy.special as sp
+import scipy as sp
 
-r_range=.5e-5
-color_range=2
-resolution=0.01
-bessel_n=40
-num_frames = 5
-animation_speed=60 #lower is faster
+## custom differentiable complex bessel and hankels
+@jax.custom_jvp
+def j1jax(n, x):
+    return sp.special.jv(n,x)
+@j1jax.defjvp
+def j1jvp(primals, tangents):
+    n, x = primals
+    _, x_dot = tangents
+    primal_out = j1jax(n, x)
+    tangent_out = 0.5 * (j1jax(n - 1, x) - j1jax(n + 1, x)) * x_dot
+    return primal_out, tangent_out
+@jax.custom_jvp
+def h1jax(n, x):
+    return sp.special.hankel1(n,x)
+@h1jax.defjvp
+def h1jvp(primals, tangents):
+    n, x = primals
+    _, x_dot = tangents
+    primal_out = h1jax(n, x)
+    tangent_out = 0.5 * (h1jax(n - 1, x) - h1jax(n + 1, x)) * x_dot
+    return primal_out, tangent_out
+@jax.custom_jvp
+def j1pjax(n, x):
+    return sp.special.jvp(n,x)
+@j1pjax.defjvp
+def j1pjvp(primals, tangents):
+    n, x = primals
+    _, x_dot = tangents
+    primal_out = sp.special.jvp(n,x)
+    tangent_out = 0.5 * (sp.special.jvp(n - 1, x) - sp.special.jvp(n + 1, x)) * x_dot
+    return primal_out, tangent_out
+@jax.custom_jvp
+def h1pjax(n, x):
+    return sp.special.h1vp(n,x)
+@h1pjax.defjvp
+def h1pjvp(primals, tangents):
+    n, x = primals
+    _, x_dot = tangents
+    primal_out = sp.special.h1vp(n,x)
+    tangent_out = 0.5 * (sp.special.h1vp(n - 1, x) - sp.special.h1vp(n + 1, x)) * x_dot
+    return primal_out, tangent_out
 
-f=4e14
-c=2.998e8
-theta_k = np.pi*0 #angle of wave
-a=.1e-5 # radius of cylinder
-n_p=1 # index outside of cylinder
-n_m=0.8 # index of cylinder
-omega=(2*np.pi*f)
-k_p=(omega*n_p)/c
-k_m=(omega*n_m)/c
-T=1/f
+#variables, -will integrate over omega and k_z which are independant
+c=1 #natural units 
+omega=1
+T=2*jnp.pi/(omega)
+n_out=1.5+0.01j     #index outside of cylinders, imaginary indicates loss
+k0=omega/c+0j
+k_out=n_out*k0
+k_z=0.2*k_out
+k_perp_out=jnp.sqrt(k_out**2-k_z**2)
+theta_k=0.25*jnp.pi  #angle of incident plane wave
+vec_k_perp_out=k_perp_out*jnp.asarray([jnp.cos(theta_k),jnp.sin(theta_k)])
+V0=1/jnp.sqrt(2)    #magnitude of plane wave
 
-t_range=np.linspace(0, T-(T/num_frames), num_frames)
-r = np.arange(0, r_range, resolution*r_range)
-theta = np.arange(0, 2*np.pi, resolution)
-r_grid, theta_grid = np.meshgrid(r, theta)
+## plot settings
+ani_frames=4
+ani_speed=75
+color_range=1 #should match field max magnitude
+t=np.linspace(0, T-(T/ani_frames), ani_frames)
 
-#Scalar Wave INPUT bessel, hankel coefficients
-A_M=[1j**M for M in range(-bessel_n,bessel_n+1)]
-B_M_m=np.zeros((2*bessel_n+1), complex)
-B_M_p=np.zeros((2*bessel_n+1), complex)
+npts=128
+xy_range=10*jnp.pi
+x=jnp.linspace(-xy_range,xy_range,npts)
+y=jnp.linspace(-xy_range,xy_range,npts)
+X, Y = jnp.meshgrid(x, y)
 
-# Alpha function
-def alpha(M,negative,hankelfirst,hankelsecond):
-    nka_p=n_p*k_p*a
-    nka_m=n_m*k_m*a
-    if negative:
-        result=n_m
-        result *= sp.h1vp(M,nka_p) if hankelfirst else sp.jvp(M,nka_p)  #alternates positive
-        result *= sp.hankel1(M,nka_m) if hankelsecond else sp.jv(M,nka_m)
-    else: #positive
-        result=n_p
-        result *= sp.h1vp(M,nka_m) if hankelfirst else sp.jvp(M,nka_m)  #alternates negative
-        result *= sp.hankel1(M,nka_p) if hankelsecond else sp.jv(M,nka_p)
-    return result
+#Incident plane wave coefficients
+s_terms=50
+vs_terms=jnp.arange(-s_terms,s_terms+1) 
+A_E0=V0*jnp.exp(1j*vs_terms*(jnp.pi/2-theta_k))
+A_B0=A_E0
 
-#SCATTER MATRIX
-R_EE_m = np.zeros((2*bessel_n+1), complex)
-R_EE_p = np.zeros((2*bessel_n+1), complex)
-for M in range(-bessel_n,bessel_n+1):
-    delta_M=(alpha(M,1,1,0)-alpha(M,0,0,1))*(n_m**2*alpha(M,0,0,1)-n_p**2*alpha(M,1,1,0))
-    R_EE_m[M+bessel_n]=(alpha(M,0,0,1)-alpha(M,1,1,0))*(n_m**2*alpha(M,0,1,1)-n_p**2*alpha(M,1,1,1))/delta_M
-    R_EE_p[M+bessel_n]=(alpha(M,0,0,1)-alpha(M,1,1,0))*(n_m**2*alpha(M,0,0,0)-n_p**2*alpha(M,1,0,0))/delta_M
+class cylinder:
+    count=1
+    instances=[]
+    full_field=[]
+    def __init__(self,position,radius,refractive_index,number_of_terms):
+        self.count=cylinder.count
+        cylinder.instances.append(self)
+        cylinder.count+=1
+        
+        self.pos=position
+        self.r=radius
+        self.n=refractive_index
+        self.terms=number_of_terms
+        self.vterms=jnp.arange(-self.terms,self.terms+1) 
+        order=self.vterms #i didnt want to rewrite
+        ## secondary terms
+        self.k=self.n*k0+0j
+        self.k_perp=jnp.sqrt(self.k**2-k_z**2)
+        self.tau=(k_z/(self.r*self.k_perp*k_perp_out))*(n_out**2-self.n**2)
+        self.A_E=V0*jnp.exp(1j*jnp.dot(vec_k_perp_out,self.pos)+1j*self.vterms*(jnp.pi/2-theta_k))
+        self.A_B=self.A_E
 
-B_M_m=np.divide(A_M,R_EE_m)   #negative R for inside a?
-B_M_p=np.multiply(R_EE_p,A_M)  #positive R for outside a?
-#A_M=np.zeros((2*bessel_n+1), complex)  #remove incoming wave
+        self.B_E=self.S_EE(order)*self.A_E[order+self.terms]+self.S_EB(order)*self.A_B[order+self.terms] 
+        cylinder.full_field.append(self.B_E)
+        self.B_B=self.S_BB(order)*self.A_B[order+self.terms]+self.S_BE(order)*self.A_E[order+self.terms]
+        cylinder.full_field.append(self.B_B)
+                        
 
+    def alpha(self,order, cylinder_index:bool, hankel_first:bool, hankel_second:bool):
+        if cylinder_index:
+            result = self.k_perp/k0 #should this be the k of the cylinder??
+            result *= h1pjax(order, k_perp_out*self.r) if hankel_first else j1pjax(order, k_perp_out*self.r)
+            result *= h1jax(order, self.k_perp*self.r) if hankel_second else j1jax(order, self.k_perp*self.r)
+        else:
+            result = k_perp_out/k0
+            result *= h1pjax(order, self.k_perp*self.r) if hankel_first else j1pjax(order, self.k_perp*self.r)
+            result *= h1jax(order, k_perp_out*self.r) if hankel_second else j1jax(order, k_perp_out*self.r)
+        return result
 
-#SUM HANKELS AND BESSELS
-def compute_field(t):
-    Z = np.zeros((len(theta), len(r)), complex)
-    for Q in range(-bessel_n,bessel_n+1):
-        Z += (A_M[Q+bessel_n]*sp.jv(Q, n_p*k_p*r_grid)+B_M_p[Q+bessel_n]*sp.hankel1(Q,n_p*k_p*r_grid))*np.exp(1j*Q*(theta_grid-theta_k))
-    Z *= np.exp(-1j*omega*t)
-    return np.real(Z)
-    #return np.real(np.exp(1j*(n_p*k_p*r_grid*np.cos(theta_grid-theta_k)-omega*t))) #plane wave
+    def delta(self,order):
+        return (self.alpha(order,True,True,False)-self.alpha(order,False,False,True))*\
+    (self.n**2*self.alpha(order,False,False,True)-n_out**2*self.alpha(order,True,True,False))+\
+    (order*j1jax(order,self.k_perp*self.r)*h1jax(order,k_perp_out*self.r)*self.tau)**2
+    
+    def S_EE(self,order): #scatter coeffs from E to E field
+        return (1/self.delta(order))*(self.alpha(order,False,False,True)-self.alpha(order,True,True,False))*\
+                (self.n**2*self.alpha(order,False,False,False)-n_out**2*self.alpha(order,True,False,False))-\
+                order**2*j1jax(order,k_perp_out*self.r)*h1jax(order,k_perp_out*self.r)*\
+                    j1jax(order,self.k_perp*self.r)**2*self.tau**2
 
-frames = [compute_field(i) for i in t_range]
-fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
-c=ax.pcolormesh(theta_grid, r_grid, frames[0], cmap='gist_heat', vmax=color_range,vmin=-color_range)
+    def S_EB(self,order): #scatter coeffs from B to B field
+        return (2*order*self.tau*self.k_perp*j1jax(order,self.k_perp*self.r)**2)/ \
+        (self.delta(order)*jnp.pi*k0*self.r*k_perp_out)
+
+    def S_BE(self,order): #scatter coeffs from E to B field
+        return -n_out**2*self.S_EB(order)
+
+    def S_BB(self,order): #scatter coeffs from E to E field
+        return (1/self.delta(order))*((self.alpha(order,False,False,False)-self.alpha(order,True,False,False))*\
+                (self.n**2*self.alpha(order,False,False,True)-n_out**2*self.alpha(order,True,True,False))-\
+                order**2*j1jax(order,k_perp_out*self.r)*h1jax(order,k_perp_out*self.r)*\
+                    j1jax(order,self.k_perp*self.r)**2*self.tau**2)
+
+c1=cylinder(jnp.asarray([-10,10]),2,1,10)  #adding more terms seems to make the ring of death worse, #may need to upgrade to float64, i changed the color range and its still no good...
+c2=cylinder(jnp.asarray([0,0]),2,1,10)
+c3=cylinder(jnp.asarray([10,-10]),2,1,10)
+
+# 2x2 SH block 
+def SH_block(n,m):
+    def H():return h1jax(n-m,k_perp_out*jnp.linalg.norm(d.pos-c.pos))*jnp.exp(-1j*(n-m)*jnp.arctan2(d.pos[1]-c.pos[1],d.pos[0]-c.pos[0]))
+    return jnp.array([( -1*d.S_EE(n)*H() , -1*d.S_EB(n)*H() ) , (-1*d.S_BE(n)*H() , -1*d.S_BB(n)*H() )])
+        
+M=[]
+for d in cylinder.instances:
+    Mcol = []
+    for c in cylinder.instances:
+        if c!=d:
+            n_vals = c.vterms
+            m_vals = d.vterms
+            SH=[]
+            for m in m_vals:
+                SHcol=[]
+                for n in n_vals:
+                    SHcol.append(SH_block(n,m))
+                SH.append(jnp.vstack(SHcol))
+            Mcol.append(jnp.hstack(SH))
+        else: Mcol.append(jnp.eye(2*(2*c.terms+1)))
+    M.append(jnp.vstack(Mcol))     
+M=jnp.hstack(M)
+
+#M * B_end = B_start, LU decomp
+B_start=jnp.hstack(cylinder.full_field)
+lu, piv = jax.scipy.linalg.lu_factor(M)
+B_end = jax.scipy.linalg.lu_solve((lu, piv), B_start)
+
+def compute_field(time): #struggling to vectorize this?
+    #source field   
+    VE=jnp.stack([A_E0[order+s_terms]*j1jax(order, k_perp_out * jnp.sqrt(X**2+Y**2))\
+                 *jnp.exp(1j*(order * jnp.arctan2(Y,X)-omega * time)) for order in vs_terms])  
+    
+    output_position=0
+    for d in cylinder.instances:
+        VEd=jnp.stack([B_end[order+output_position]*h1jax(order, k_perp_out * jnp.sqrt((X-d.pos[0])**2+(Y-d.pos[1])**2))\
+                 *jnp.exp(1j*(order * jnp.arctan2(Y-d.pos[1],X-d.pos[0])-omega * time)) for order in d.vterms])
+        output_position+=2*(2*d.terms+1) #shift to next set of d
+        VE=jnp.concatenate([VE, VEd], axis=0)
+
+    return jnp.real(VE.sum(axis=0))
+
+frames = [jnp.asarray(compute_field(i)) for i in t]
+fig, ax = plt.subplots(dpi=200)
+c=ax.pcolormesh(X, Y, frames[0], cmap='gist_heat', vmax=color_range,vmin=-color_range)
 fig.colorbar(c, ax=ax, label='Scalar Value')
-ax.set_rmax(r_range)
-ax.set_rlabel_position(-22.5)  # Move radial labels away from plotted line
-ax.grid(True)
-ax.set_title("Polar Plot of scalar field V(r,theta)", va='bottom')
+ax.set_title("Plot of scalar field V(r,theta)", va='bottom')
+
 def update(frame):
     c.set_array(frames[frame].flatten())
     return c,
 ani = animation.FuncAnimation(
-    fig, update, frames=num_frames, interval=animation_speed, blit=True)
-plt.show()
+    fig, update, frames=ani_frames, interval=ani_speed, blit=True)
+ani.save('field.gif', writer='pillow', fps=10,dpi=200) #brew install ffmpeg #writer for .mp4
