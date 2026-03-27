@@ -1,7 +1,7 @@
 # `mp_torch`: A Differentiable Electromagnetic Solver for Radiative Cooling Textiles
 
 A custom, PyTorch-based multipole scattering solver designed for modeling and optimizing cylindrical geometries, specifically porous polymer fibers used in passive radiative cooling.
-This code was developed as part of a Physics Honours thesis program at the University of Sydney, the accompanying thesis may be found here 'thesis.pdf'.
+This code was developed as part of a Physics Honours thesis program at the University of Sydney, the accompanying thesis may be found here `thesis.pdf`.
 
 This codebase provides a fully differentiable, semi-analytical simulation environment. By wrapping SciPy's Bessel functions with custom PyTorch autograd functions, `mp_torch` allows for gradient-based optimization of complex microstructures (like hole positions and radii within a fiber) to maximize radiative cooling efficiency.
 
