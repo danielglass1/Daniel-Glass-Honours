@@ -1,6 +1,7 @@
-# `mp_torch`: Differentiable Electromagnetic Solver for Radiative Cooling Textiles
+# `mp_torch`: A Differentiable Electromagnetic Solver for Radiative Cooling Textiles
 
-A custom, PyTorch-based multipole scattering solver designed for modeling and optimizing cylindrical geometries, specifically porous polymer fibers used in passive radiative cooling. 
+A custom, PyTorch-based multipole scattering solver designed for modeling and optimizing cylindrical geometries, specifically porous polymer fibers used in passive radiative cooling.
+This code was developed as part of a Physics Honours thesis program at the University of Sydney, the accompanying thesis may be found here 'thesis.pdf'.
 
 This codebase provides a fully differentiable, semi-analytical simulation environment. By wrapping SciPy's Bessel functions with custom PyTorch autograd functions, `mp_torch` allows for gradient-based optimization of complex microstructures (like hole positions and radii within a fiber) to maximize radiative cooling efficiency.
 
@@ -37,34 +38,17 @@ Ensure you have a Python environment with the following dependencies:
 
 You can define a fiber (the "jacket") and a series of holes (the "cylinders"), and solve for the internal and scattered fields. Check `plotting_example.py` for a complete implementation.
 
-```python
-import torch
-import matplotlib.subplots as plt
-from mp_torch.solver import solver
-from mp_torch.generate_field import generate_field
+### 2. Optimizing a Fiber Geometry
+To generate new, optimized geometries using gradient descent, run 'optimiser.py':
+The optimizer will:
 
-# Define incident wave parameters
-inc_k_0 = torch.tensor(2 * torch.pi) / 1.0  # Wavenumber (lambda = 1)
-inc_phi = torch.tensor(0.5 * torch.pi)      # Oblique angle
+Initialize a random configuration of non-overlapping holes inside the fiber using circle packing.
 
-# Define fiber (jacket)
-fibre_a = torch.tensor(5.0)  # Radius
-fibre_n_real = 1.5           # Refractive index
+Evaluate the forward scattering objective across a defined spectrum of wavenumbers (k_0).
 
-# Define holes: [X, Y, Radius, Re(n), Im(n)]
-holes = torch.tensor([
-    [-1.0, -3.0, 1.0, 1.0, 0.0],
-    [-3.0,  1.0, 1.2, 1.0, 0.0],
-    [ 2.0,  2.0, 2.0, 1.0, 0.0],
-], dtype=torch.float32)
+Use backpropagation via AdamW to shift hole positions and adjust radii to minimize the objective function.
 
-# Initialize and solve
-sim = solver(holes, inc_k_0, inc_phi, fibre_a, fibre_n_real, 0.0, modify_trunc=1.0)
+Save the optimized geometries as .pt tensor files and render preview images of the cross-section.
 
-# Generate Field maps
-E_field, K_field = generate_field(sim, inc_magnitude=1, inc_delta=torch.tensor(0.25*torch.pi), inc_theta=torch.tensor(0), xy_range=fibre_a*2, npts=128)
-
-# Plot Electric Field
-plt.imshow(torch.real(E_field), origin='lower', cmap='viridis')
-plt.colorbar()
-plt.show()
+## Author
+Daniel Glass
